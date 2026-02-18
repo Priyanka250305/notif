@@ -6,7 +6,6 @@
 #include <sstream>
 #include <random>
 
-// ── Notification helpers ─────────────────────────────────────────────────────
 
 static std::string generate_id() {
     static std::mt19937_64 rng(std::random_device{}());
@@ -36,9 +35,6 @@ json Notification::to_json() const {
         {"timestamp", timestamp}
     };
 }
-
-// ── NotificationService ──────────────────────────────────────────────────────
-
 NotificationService::NotificationService(std::shared_ptr<sw::redis::Redis> redis,
                                          const std::string& channel)
     : redis_(std::move(redis)), channel_(channel) {}
@@ -56,7 +52,6 @@ bool NotificationService::publish(const json& payload, std::string& error_msg) {
         return false;
     }
 
-    // Publish serialized notification to Redis
     try {
         std::string serialized = n.to_json().dump();
         redis_->publish(channel_, serialized);
@@ -71,13 +66,12 @@ bool NotificationService::publish(const json& payload, std::string& error_msg) {
 }
 
 bool NotificationService::already_processed(const std::string& notification_id) {
-    // Check Redis for distributed dedup
     try {
         std::string key = "notif:processed:" + notification_id;
         auto val = redis_->get(key);
         if (val) return true;
     } catch (...) {
-        // Fall back to in-memory check
+  
     }
 
     std::lock_guard<std::mutex> lock(dedup_mutex_);
@@ -87,7 +81,6 @@ bool NotificationService::already_processed(const std::string& notification_id) 
 void NotificationService::mark_processed(const std::string& notification_id) {
     try {
         std::string key = "notif:processed:" + notification_id;
-        // Expire after 24h to avoid memory leak
         redis_->setex(key, 86400, "1");
     } catch (...) {}
 
@@ -107,8 +100,6 @@ void NotificationService::deliver(const std::string& raw_message) {
     }
 
     Notification n = Notification::from_json(j);
-
-    // Idempotency check
     if (already_processed(n.id)) {
         std::cout << "[NotificationService] Duplicate skipped: " << n.id << "\n";
         return;
@@ -116,7 +107,6 @@ void NotificationService::deliver(const std::string& raw_message) {
 
     mark_processed(n.id);
 
-    // Deliver if user is connected on THIS instance
     auto& cm = ConnectionManager::instance();
     if (cm.is_connected(n.user_id)) {
         json delivery = {
