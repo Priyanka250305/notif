@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # ── Redis ──────────────────────────────────────────────────────────────────
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -16,7 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Notification Server (Instance 1) ───────────────────────────────────────
   server1:
     build: .
     restart: unless-stopped
@@ -36,7 +35,6 @@ services:
       timeout: 5s
       retries: 3
 
-  # ── Notification Server (Instance 2 — demonstrates horizontal scaling) ─────
   server2:
     build: .
     restart: unless-stopped
