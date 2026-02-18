@@ -1,4 +1,4 @@
-# ── Stage 1: Build ────────────────────────────────────────────────────────────
+
 FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -21,7 +21,6 @@ RUN cmake -B build \
     -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
     && cmake --build build --parallel $(nproc)
 
-# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -34,7 +33,6 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY --from=builder /app/build/notification-server .
 
-# Default environment
 ENV PORT=8080
 ENV REDIS_URL=tcp://redis:6379
 ENV NOTIF_CHANNEL=notifications
