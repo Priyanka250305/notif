@@ -13,17 +13,14 @@
 
 using json = nlohmann::json;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 static std::string get_env(const char* name, const char* default_val) {
     const char* val = std::getenv(name);
     return val ? std::string(val) : std::string(default_val);
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
-    // Config from environment variables (12-factor app style)
     const int         PORT         = std::stoi(get_env("PORT",        "8080"));
     const std::string REDIS_URL    = get_env("REDIS_URL",    "tcp://127.0.0.1:6379");
     const std::string WS_CHANNEL   = get_env("NOTIF_CHANNEL","notifications");
@@ -35,7 +32,6 @@ int main() {
               << "Channel:   " << WS_CHANNEL << "\n"
               << "Threads:   " << CONCURRENCY << "\n\n";
 
-    // ── Redis setup ───────────────────────────────────────────────────────────
     std::shared_ptr<sw::redis::Redis> redis;
     try {
         redis = std::make_shared<sw::redis::Redis>(REDIS_URL);
@@ -46,10 +42,8 @@ int main() {
                   << "\nStarting WITHOUT Redis (single-instance mode)\n\n";
     }
 
-    // ── NotificationService ───────────────────────────────────────────────────
     auto notif_service = std::make_shared<NotificationService>(redis, WS_CHANNEL);
 
-    // ── Redis Subscriber (background thread) ─────────────────────────────────
     std::unique_ptr<RedisSubscriber> subscriber;
     if (redis) {
         subscriber = std::make_unique<RedisSubscriber>(
@@ -61,18 +55,14 @@ int main() {
         );
         subscriber->start();
     }
-
-    // ── Crow app ──────────────────────────────────────────────────────────────
     crow::SimpleApp app;
 
-    // CORS middleware helper
     auto add_cors = [](crow::response& res) {
         res.add_header("Access-Control-Allow-Origin",  "*");
         res.add_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         res.add_header("Access-Control-Allow-Headers", "Content-Type, X-User-ID");
     };
 
-    // ── GET /health ───────────────────────────────────────────────────────────
     CROW_ROUTE(app, "/health")
     ([&add_cors](const crow::request&, crow::response& res) {
         json body = {
@@ -86,7 +76,6 @@ int main() {
         res.end();
     });
 
-    // ── OPTIONS (CORS preflight) ──────────────────────────────────────────────
     CROW_ROUTE(app, "/notify").methods(crow::HTTPMethod::OPTIONS)
     ([&add_cors](const crow::request&, crow::response& res) {
         res.code = 204;
@@ -94,10 +83,6 @@ int main() {
         res.end();
     });
 
-    // ── POST /notify ──────────────────────────────────────────────────────────
-    //
-    // Body: { "user_id": "...", "message": "...", "type": "info" }
-    //
     CROW_ROUTE(app, "/notify").methods(crow::HTTPMethod::POST)
     ([&notif_service, &add_cors](const crow::request& req, crow::response& res) {
         add_cors(res);
@@ -124,7 +109,6 @@ int main() {
         res.end();
     });
 
-    // ── GET /metrics ──────────────────────────────────────────────────────────
     CROW_ROUTE(app, "/metrics")
     ([&add_cors](const crow::request&, crow::response& res) {
         add_cors(res);
@@ -134,7 +118,6 @@ int main() {
         res.end();
     });
 
-    // ── GET /connections ─────────────────────────────────────────────────────
     CROW_ROUTE(app, "/connections")
     ([&add_cors](const crow::request&, crow::response& res) {
         add_cors(res);
@@ -150,13 +133,8 @@ int main() {
         res.end();
     });
 
-    // ── WebSocket /ws?user_id=XXX ─────────────────────────────────────────────
-    //
-    // The client MUST pass ?user_id=<id> in the query string.
-    //
     CROW_WEBSOCKET_ROUTE(app, "/ws")
         .onopen([](crow::websocket::connection& conn) {
-            // user_id is extracted in onopen — Crow gives us the URL params
             const std::string user_id = conn.get_request().url_params.get("user_id")
                                         ? conn.get_request().url_params.get("user_id")
                                         : "anonymous_" + std::to_string(
@@ -165,7 +143,6 @@ int main() {
             conn.userdata(new std::string(user_id));
             ConnectionManager::instance().add(user_id, &conn);
 
-            // Send welcome
             json welcome = {
                 {"type",    "connected"},
                 {"user_id", user_id},
@@ -176,7 +153,7 @@ int main() {
         .onmessage([](crow::websocket::connection& conn,
                       const std::string& data,
                       bool /*is_binary*/) {
-            // Echo + heartbeat support
+
             json msg;
             try {
                 msg = json::parse(data);
@@ -189,7 +166,6 @@ int main() {
                 return;
             }
 
-            // Echo back
             json echo = {
                 {"type", "echo"},
                 {"data", msg}
@@ -205,13 +181,11 @@ int main() {
             }
         });
 
-    // ── Start server ──────────────────────────────────────────────────────────
     std::cout << "\n[Server] Starting on port " << PORT << "...\n\n";
     app.port(PORT)
        .concurrency(CONCURRENCY)
        .run();
 
-    // Cleanup
     if (subscriber) subscriber->stop();
 
     return 0;
